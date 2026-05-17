@@ -20,7 +20,8 @@ async def shorten(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         short = resp.text.strip()
         keyboard = [
             [InlineKeyboardButton("🔗 פתח קישור", url=short)],
-            [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]
+            [InlineKeyboardButton("🔄 קצר עוד קישור", callback_data="menu_short")],
+            [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
         ]
         await update.message.reply_text(
             f"✅ הקישור המקוצר:\n`{short}`",

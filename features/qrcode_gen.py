@@ -17,7 +17,10 @@ async def make_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    keyboard = [
+        [InlineKeyboardButton("🔄 צור עוד QR", callback_data="menu_qr")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_photo(
         photo=buf,
         caption=f"✅ קוד QR עבור:\n`{text}`",

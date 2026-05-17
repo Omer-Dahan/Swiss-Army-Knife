@@ -73,7 +73,10 @@ async def check_strength(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     tips_text = "\n".join(f"• {t}" for t in r["tips"]) if r["tips"] else "• אין הערות — סיסמא מצוינת!"
 
-    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    keyboard = [
+        [InlineKeyboardButton("🔄 בדוק עוד סיסמא", callback_data="menu_pwcheck")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_text(
         f"🔐 *ניתוח סיסמא*\n\n"
         f"{r['emoji']} *{r['label']}*\n"

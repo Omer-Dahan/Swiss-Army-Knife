@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 
 WAIT_TEXT = 1
@@ -38,7 +38,10 @@ async def ask_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def do_fix(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     original = update.message.text.strip()
     fixed = fix_hebrew(original)
-    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    keyboard = [
+        [InlineKeyboardButton("🔄 תקן עוד טקסט", callback_data="menu_hebfix")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_text(
         f"🔤 *מקורי:*\n`{original}`\n\n"
         f"✅ *מתוקן:*\n`{fixed}`",

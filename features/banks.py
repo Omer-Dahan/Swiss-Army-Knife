@@ -77,7 +77,11 @@ async def show_branch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         )
         return WAIT_BRANCH
 
-    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    keyboard = [
+        [InlineKeyboardButton("🔄 חפש סניף נוסף", callback_data=f"bank_{bank_code}")],
+        [InlineKeyboardButton("🔙 בחר בנק אחר", callback_data="menu_banks")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_text(
         f"🏦 <b>{bank_name}</b> — סניף {branch}\n"
         f"קוד בנק: <code>{bank_code}</code> | קוד סניף: <code>{branch}</code>\n\n"
@@ -93,6 +97,7 @@ def register(app) -> None:
         entry_points=[
             MessageHandler(filters.Regex(r"(?i)^בנקים$|^מספרי בנק$|^סניף בנק$"), start_banks),
             CallbackQueryHandler(start_banks, pattern=r"^menu_banks$"),
+            CallbackQueryHandler(choose_bank, pattern=r"^bank_"),
         ],
         states={
             CHOOSE_BANK: [CallbackQueryHandler(choose_bank, pattern=r"^bank_")],

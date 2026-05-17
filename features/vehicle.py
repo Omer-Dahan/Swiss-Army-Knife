@@ -47,7 +47,10 @@ async def search_vehicle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "קילומטראז": r.get("km_acharon_b", ""),
     }
     lines = "\n".join(f"• {k}: *{v}*" for k, v in fields.items() if v)
-    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    keyboard = [
+        [InlineKeyboardButton("🔄 חפש רכב נוסף", callback_data="menu_vehicle")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_text(
         f"🚗 *רכב {plate}*\n\n{lines}",
         parse_mode="Markdown",

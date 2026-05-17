@@ -52,7 +52,10 @@ async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         result = amount * usd_to_ils
         text = f"💵${amount:,.2f} = ₪{result:,.2f}\n\n_שער: 1$ = ₪{usd_to_ils:.4f}_"
 
-    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    keyboard = [
+        [InlineKeyboardButton("🔄 המר עוד", callback_data="menu_currency")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 

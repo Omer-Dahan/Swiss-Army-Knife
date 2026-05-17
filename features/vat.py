@@ -77,7 +77,10 @@ async def calc_vat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"*מע\"מ הכלול: ₪{vat:,.2f}*"
         )
 
-    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    keyboard = [
+        [InlineKeyboardButton("🔄 חשב עוד", callback_data="menu_vat")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
