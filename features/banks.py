@@ -77,11 +77,13 @@ async def show_branch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         )
         return WAIT_BRANCH
 
+    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
     await update.message.reply_text(
         f"🏦 <b>{bank_name}</b> — סניף {branch}\n"
         f"קוד בנק: <code>{bank_code}</code> | קוד סניף: <code>{branch}</code>\n\n"
         f"לבירור פרטי הסניף המלאים (כתובת, טלפון) פנה לאתר הבנק או לשירות הלקוחות.",
         parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return ConversationHandler.END
 

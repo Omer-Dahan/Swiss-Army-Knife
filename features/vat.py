@@ -15,6 +15,7 @@ async def start_vat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             InlineKeyboardButton("➖ הפחת מע\"מ ממחיר", callback_data="vat_remove"),
         ],
         [InlineKeyboardButton("📊 כמה מע\"מ כלול?", callback_data="vat_how_much")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
     ]
     await update.effective_message.reply_text(
         f"🧾 *מחשבון מע\"מ* ({int(VAT_RATE*100)}%)\nבחר פעולה:",
@@ -76,7 +77,8 @@ async def calc_vat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"*מע\"מ הכלול: ₪{vat:,.2f}*"
         )
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
 

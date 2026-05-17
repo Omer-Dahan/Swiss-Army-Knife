@@ -12,7 +12,8 @@ async def start_currency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         [
             InlineKeyboardButton("₪ שקל ← 💵 דולר", callback_data="cur_ils_usd"),
             InlineKeyboardButton("💵 דולר ← ₪ שקל", callback_data="cur_usd_ils"),
-        ]
+        ],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
     ]
     await update.effective_message.reply_text(
         "💱 *המרת מטבע*\nבחר כיוון המרה:",
@@ -51,7 +52,8 @@ async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         result = amount * usd_to_ils
         text = f"💵${amount:,.2f} = ₪{result:,.2f}\n\n_שער: 1$ = ₪{usd_to_ils:.4f}_"
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
 

@@ -47,6 +47,7 @@ def _notes_keyboard(notes: list) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🗑️", callback_data=f"note_del_{note['id']}"),
         ])
     rows.append([InlineKeyboardButton("➕ הוסף הערה", callback_data="note_add")])
+    rows.append([InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -89,9 +90,11 @@ async def note_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not note:
         await query.answer("ההערה לא נמצאה.", show_alert=True)
         return
+    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
     await query.message.reply_text(
         f"📝 *הערה #{note_id}*\n_{note['created']}_\n\n{note['text']}",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 

@@ -28,6 +28,8 @@ async def ask_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     ] + [
         [InlineKeyboardButton(city, callback_data=f"shab_{geoname}")]
         for city, geoname in list(CITIES.items())[5:]
+    ] + [
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]
     ]
     await update.effective_message.reply_text(
         "🕯️ *זמני שבת*\nבחר עיר:",
@@ -68,7 +70,11 @@ async def show_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"כניסת שבת: *{fmt(candles.get('date', ''))}*\n"
         f"יציאת שבת: *{fmt(havdalah.get('date', ''))}*"
     )
-    await query.edit_message_text(text, parse_mode="Markdown")
+    keyboard = [
+        [InlineKeyboardButton("🔙 חזרה לבחירת עיר", callback_data="menu_shabbat")],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
 

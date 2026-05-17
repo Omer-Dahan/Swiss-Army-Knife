@@ -33,7 +33,10 @@ async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"אזור זמן: {data.get('timezone')}"
     )
     maps_url = f"https://maps.google.com/?q={data['lat']},{data['lon']}"
-    keyboard = [[InlineKeyboardButton("🗺️ פתח במפות", url=maps_url)]]
+    keyboard = [
+        [InlineKeyboardButton("🗺️ פתח במפות", url=maps_url)],
+        [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+    ]
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
