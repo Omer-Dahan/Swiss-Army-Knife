@@ -4,27 +4,32 @@ Registered LAST so it catches only messages not handled by other features.
 """
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, MessageHandler, filters
+from telegram.ext import ContextTypes, MessageHandler, filters, CallbackQueryHandler
 
 # ── patterns ────────────────────────────────────────────────────────────────
 _PLATE_RE = re.compile(r"^\d{5,8}$|^\d{2,3}-\d{3}-\d{2,3}$")
 _IP_RE = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
 _URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
+_URL_IP_RE = re.compile(r"^https?://(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?:[:/].*)?$", re.I)
 _PHONE_RE = re.compile(r"^[\d\s\+\-\(\)]{7,15}$")
 _AMOUNT_RE = re.compile(r"^[\d\.,]+$")
-
-
-def _btn(label: str, text: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton(label, callback_data=f"smart_noop")
 
 
 async def smart_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text.strip()
 
-    # IP address
+    # URL with bare IP → IP lookup
+    url_ip_match = _URL_IP_RE.match(text)
+    if url_ip_match:
+        update.message.text = url_ip_match.group(1)
+        from features.location import get_location
+        await get_location(update, context)
+        return
+
+    # bare IP address → IP lookup
     if _IP_RE.match(text):
-        from features.location import ask_ip
-        await ask_ip(update, context)
+        from features.location import get_location
+        await get_location(update, context)
         return
 
     # license plate (Israeli format)
@@ -71,9 +76,6 @@ async def smart_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
 
-from telegram.ext import CallbackQueryHandler
-
-
 async def smart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -98,11 +100,6 @@ async def smart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.message.reply_text(f"✅ `{short}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif action == "smart_vat":
-        from features import vat as vat_mod
-        context.user_data["vat_mode"] = "vat_add"
-        # simulate message with the amount
-        update.callback_query.message.text = context.user_data.get("smart_amount", "")
-        # create a fake Update-like message for the handler
         await query.message.reply_text("שלח את הסכום שוב עם /מעמ כדי לבחור מצב מדויק, או שלח ישירות מעמ.")
 
     elif action == "smart_currency":

@@ -51,11 +51,14 @@ async def refresh_clock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         [InlineKeyboardButton("🔄 רענן", callback_data="clock_refresh")],
         [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]
     ]
-    await query.edit_message_text(
-        _clock_text(),
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
+    try:
+        await query.edit_message_text(
+            _clock_text(),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    except Exception:
+        pass
 
 
 def register(app) -> None:

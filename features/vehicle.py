@@ -8,9 +8,11 @@ WAIT_PLATE = 1
 async def ask_plate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.callback_query:
         await update.callback_query.answer()
+    keyboard = [[InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")]]
     await update.effective_message.reply_text(
         "🚗 *חיפוש רכב*\nשלח מספר רישוי (לדוגמה: 12-345-67):",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return WAIT_PLATE
 

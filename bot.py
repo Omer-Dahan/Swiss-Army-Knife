@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, TypeHandler
 
 from features import (
     whatsapp,
@@ -25,6 +25,25 @@ from features import (
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+
+async def reset_state_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query and update.callback_query.data:
+        data = update.callback_query.data
+        if data.startswith("menu_") or data == "go_home":
+            from telegram.ext import ConversationHandler
+            try:
+                for group in context.application.handlers.values():
+                    for handler in group:
+                        if isinstance(handler, ConversationHandler):
+                            chat_id = update.effective_chat.id if update.effective_chat else None
+                            user_id = update.effective_user.id if update.effective_user else None
+                            if chat_id and user_id:
+                                key = (chat_id, user_id)
+                                if hasattr(handler, "_conversations") and key in handler._conversations:
+                                    del handler._conversations[key]
+            except Exception:
+                pass
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -72,7 +91,6 @@ def main_menu() -> InlineKeyboardMarkup:
 
 _SIMPLE_INSTRUCTIONS = {
     "menu_wa":    "שלח מספר טלפון:",
-    "menu_ip":    "שלח כתובת IP (ריק = בדוק את ה-IP שלך):",
     "menu_short": "שלח קישור לקיצור:",
     "menu_qr":    "שלח טקסט או קישור לקוד QR:",
     "menu_pdf":   "📄 שלח תמונה (JPG/PNG) לקבלת PDF, או שלח קובץ PDF לקבלת תמונה.",
@@ -81,7 +99,13 @@ _SIMPLE_INSTRUCTIONS = {
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "ברוך הבא לבוט הכלים שלך מה תרצה לעשות היום?",
+        "ברוך הבא לאולר השוויצרי! 🇨🇭\n"
+        "בחר כלי מהתפריט, או שלח ישירות:\n"
+        "• כתובת IP לזיהוי מיקום\n"
+        "• מספר רישוי לחיפוש רכב\n"
+        "• קישור לקיצור / QR\n"
+        "• מספר טלפון לוואטסאפ\n"
+        "• סכום למחשבון מע\"מ / המרת מטבע",
         reply_markup=main_menu(),
     )
 
@@ -90,7 +114,13 @@ async def go_home_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "ברוך הבא לבוט הכלים שלך מה תרצה לעשות היום?",
+        "ברוך הבא לאולר השוויצרי! 🇨🇭\n"
+        "בחר כלי מהתפריט, או שלח ישירות:\n"
+        "• כתובת IP לזיהוי מיקום\n"
+        "• מספר רישוי לחיפוש רכב\n"
+        "• קישור לקיצור / QR\n"
+        "• מספר טלפון לוואטסאפ\n"
+        "• סכום למחשבון מע\"מ / המרת מטבע",
         reply_markup=main_menu(),
     )
 
@@ -115,8 +145,9 @@ def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(TypeHandler(Update, reset_state_interceptor), group=-1)
     app.add_handler(CallbackQueryHandler(go_home_callback, pattern=r"^go_home$"))
-    app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu_(wa|ip|short|qr|pdf)$"))
+    app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu_(wa|short|qr|pdf)$"))
 
     # ConversationHandlers ראשונים — חייבים להיות לפני menu_callback הכללי
     location.register(app)
