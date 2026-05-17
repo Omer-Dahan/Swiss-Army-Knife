@@ -6,6 +6,37 @@ CHOOSE_MODE, WAIT_AMOUNT = range(2)
 VAT_RATE = 0.18
 
 
+def _format_result(amount: float, mode: str) -> str:
+    if mode == "vat_add":
+        vat = amount * VAT_RATE
+        total = amount + vat
+        return (
+            f"🧾 *הוספת מע\"מ*\n"
+            f"מחיר לפני מע\"מ: ₪{amount:,.2f}\n"
+            f"מע\"מ ({int(VAT_RATE*100)}%): ₪{vat:,.2f}\n"
+            f"━━━━━━━━━━━\n"
+            f"*סה\"כ כולל מע\"מ: ₪{total:,.2f}*"
+        )
+    elif mode == "vat_remove":
+        before = amount / (1 + VAT_RATE)
+        vat = amount - before
+        return (
+            f"🧾 *הפחתת מע\"מ*\n"
+            f"מחיר כולל מע\"מ: ₪{amount:,.2f}\n"
+            f"מע\"מ ({int(VAT_RATE*100)}%): ₪{vat:,.2f}\n"
+            f"━━━━━━━━━━━\n"
+            f"*מחיר לפני מע\"מ: ₪{before:,.2f}*"
+        )
+    else:
+        vat = amount - (amount / (1 + VAT_RATE))
+        return (
+            f"🧾 *מע\"מ הכלול*\n"
+            f"מחיר כולל מע\"מ: ₪{amount:,.2f}\n"
+            f"━━━━━━━━━━━\n"
+            f"*מע\"מ הכלול: ₪{vat:,.2f}*"
+        )
+
+
 async def start_vat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.callback_query:
         await update.callback_query.answer()
@@ -29,6 +60,27 @@ async def choose_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     query = update.callback_query
     await query.answer()
     context.user_data["vat_mode"] = query.data
+
+    # אם הגיע מ-smart עם סכום מוכן — חשב מיד
+    smart_amount = context.user_data.pop("smart_amount", None)
+    if smart_amount is not None:
+        try:
+            amount = float(smart_amount.replace(",", "."))
+            assert amount > 0
+        except (ValueError, AssertionError):
+            await query.message.reply_text("❌ הסכום שזוהה אינו תקין.")
+            return ConversationHandler.END
+        result_keyboard = [
+            [InlineKeyboardButton("🔄 חשב עוד", callback_data="menu_vat")],
+            [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+        ]
+        await query.message.reply_text(
+            _format_result(amount, query.data),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(result_keyboard),
+        )
+        return ConversationHandler.END
+
     prompts = {
         "vat_add": "שלח מחיר לפני מע\"מ (ללא מע\"מ):",
         "vat_remove": "שלח מחיר כולל מע\"מ:",
@@ -47,41 +99,15 @@ async def calc_vat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return WAIT_AMOUNT
 
     mode = context.user_data.get("vat_mode", "vat_add")
-
-    if mode == "vat_add":
-        vat = amount * VAT_RATE
-        total = amount + vat
-        text = (
-            f"🧾 *הוספת מע\"מ*\n"
-            f"מחיר לפני מע\"מ: ₪{amount:,.2f}\n"
-            f"מע\"מ ({int(VAT_RATE*100)}%): ₪{vat:,.2f}\n"
-            f"━━━━━━━━━━━\n"
-            f"*סה\"כ כולל מע\"מ: ₪{total:,.2f}*"
-        )
-    elif mode == "vat_remove":
-        before = amount / (1 + VAT_RATE)
-        vat = amount - before
-        text = (
-            f"🧾 *הפחתת מע\"מ*\n"
-            f"מחיר כולל מע\"מ: ₪{amount:,.2f}\n"
-            f"מע\"מ ({int(VAT_RATE*100)}%): ₪{vat:,.2f}\n"
-            f"━━━━━━━━━━━\n"
-            f"*מחיר לפני מע\"מ: ₪{before:,.2f}*"
-        )
-    else:
-        vat = amount - (amount / (1 + VAT_RATE))
-        text = (
-            f"🧾 *מע\"מ הכלול*\n"
-            f"מחיר כולל מע\"מ: ₪{amount:,.2f}\n"
-            f"━━━━━━━━━━━\n"
-            f"*מע\"מ הכלול: ₪{vat:,.2f}*"
-        )
-
     keyboard = [
         [InlineKeyboardButton("🔄 חשב עוד", callback_data="menu_vat")],
         [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
     ]
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        _format_result(amount, mode),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
     return ConversationHandler.END
 
 

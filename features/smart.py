@@ -100,10 +100,34 @@ async def smart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.message.reply_text(f"✅ `{short}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif action == "smart_vat":
-        await query.message.reply_text("שלח את הסכום שוב עם /מעמ כדי לבחור מצב מדויק, או שלח ישירות מעמ.")
+        from features.vat import start_vat, VAT_RATE
+        keyboard = [
+            [
+                InlineKeyboardButton("➕ הוסף מע\"מ למחיר", callback_data="vat_add"),
+                InlineKeyboardButton("➖ הפחת מע\"מ ממחיר", callback_data="vat_remove"),
+            ],
+            [InlineKeyboardButton("📊 כמה מע\"מ כלול?", callback_data="vat_how_much")],
+            [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+        ]
+        await query.message.reply_text(
+            f"🧾 *מחשבון מע\"מ* ({int(VAT_RATE*100)}%) — סכום: *{context.user_data.get('smart_amount')}*\nבחר פעולה:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
 
     elif action == "smart_currency":
-        await query.message.reply_text("שלח /המרה או הקלד 'המרת מטבע' להמרה מדויקת.")
+        keyboard = [
+            [
+                InlineKeyboardButton("₪ שקל → 💵 דולר", callback_data="cur_ils_usd"),
+                InlineKeyboardButton("💵 דולר → ₪ שקל", callback_data="cur_usd_ils"),
+            ],
+            [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+        ]
+        await query.message.reply_text(
+            f"💱 *המרת מטבע* — סכום: *{context.user_data.get('smart_amount')}*\nבחר כיוון המרה:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
 
 
 def register(app) -> None:
