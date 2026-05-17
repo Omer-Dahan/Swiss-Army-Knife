@@ -21,6 +21,7 @@ from features import (
     world_clock,
     notes,
     smart,
+    image_icon,
 )
 
 load_dotenv()
@@ -59,6 +60,9 @@ def main_menu() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📷 קוד QR",          callback_data="menu_qr"),
             InlineKeyboardButton("📄 תמונה ↔ PDF",     callback_data="menu_pdf"),
+        ],
+        [
+            InlineKeyboardButton("🖼️ תמונה לאייקון",   callback_data="menu_icon"),
         ],
         # כספים
         [
@@ -110,21 +114,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+_HOME_TEXT = (
+    "ברוך הבא לאולר השוויצרי! 🇨🇭\n"
+    "בחר כלי מהתפריט, או שלח ישירות:\n"
+    "• כתובת IP לזיהוי מיקום\n"
+    "• מספר רישוי לחיפוש רכב\n"
+    "• קישור לקיצור / QR\n"
+    "• מספר טלפון לוואטסאפ\n"
+    "• סכום למחשבון מע\"מ / המרת מטבע"
+)
+
+
 async def go_home_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     context.user_data.pop("smart_amount", None)
     context.user_data.pop("smart_text", None)
-    await query.edit_message_text(
-        "ברוך הבא לאולר השוויצרי! 🇨🇭\n"
-        "בחר כלי מהתפריט, או שלח ישירות:\n"
-        "• כתובת IP לזיהוי מיקום\n"
-        "• מספר רישוי לחיפוש רכב\n"
-        "• קישור לקיצור / QR\n"
-        "• מספר טלפון לוואטסאפ\n"
-        "• סכום למחשבון מע\"מ / המרת מטבע",
-        reply_markup=main_menu(),
-    )
+
+    # Try to edit the existing message in-place.
+    # This fails if the message contains media (photo/document) — in that case
+    # we fall back to editing the caption, and if that also fails, send a new message.
+    from telegram.error import BadRequest
+    try:
+        await query.edit_message_text(_HOME_TEXT, reply_markup=main_menu())
+    except BadRequest:
+        try:
+            await query.edit_message_caption(caption=_HOME_TEXT, reply_markup=main_menu())
+        except BadRequest:
+            await query.message.reply_text(_HOME_TEXT, reply_markup=main_menu())
 
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -165,6 +182,7 @@ def main() -> None:
     hebrew_fix.register(app)
     dice.register(app)
     notes.register(app)
+    image_icon.register(app)
 
     # handlers שאינם conversation
     world_clock.register(app)
