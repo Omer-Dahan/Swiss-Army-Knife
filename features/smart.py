@@ -100,34 +100,93 @@ async def smart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.message.reply_text(f"✅ `{short}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif action == "smart_vat":
-        from features.vat import start_vat, VAT_RATE
+        from features.vat import _format_result, VAT_RATE
+        amount_str = context.user_data.pop("smart_amount", None)
         keyboard = [
             [
-                InlineKeyboardButton("➕ הוסף מע\"מ למחיר", callback_data="vat_add"),
-                InlineKeyboardButton("➖ הפחת מע\"מ ממחיר", callback_data="vat_remove"),
+                InlineKeyboardButton("➕ הוסף מע\"מ למחיר", callback_data="smart_vat_add"),
+                InlineKeyboardButton("➖ הפחת מע\"מ ממחיר", callback_data="smart_vat_remove"),
             ],
-            [InlineKeyboardButton("📊 כמה מע\"מ כלול?", callback_data="vat_how_much")],
+            [InlineKeyboardButton("📊 כמה מע\"מ כלול?", callback_data="smart_vat_how_much")],
             [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
         ]
+        context.user_data["smart_amount_pending"] = amount_str
         await query.message.reply_text(
-            f"🧾 *מחשבון מע\"מ* ({int(VAT_RATE*100)}%) — סכום: *{context.user_data.get('smart_amount')}*\nבחר פעולה:",
+            f"🧾 *מחשבון מע\"מ* ({int(VAT_RATE*100)}%) — סכום: *{amount_str}*\nבחר פעולה:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
+    elif action in ("smart_vat_add", "smart_vat_remove", "smart_vat_how_much"):
+        from features.vat import _format_result
+        amount_str = context.user_data.pop("smart_amount_pending", None)
+        home_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 חשב עוד", callback_data="menu_vat")],
+            [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+        ])
+        if not amount_str:
+            await query.message.reply_text("❌ הסכום לא נמצא, נסה שוב.", reply_markup=home_kb)
+            return
+        try:
+            amount = float(amount_str.replace(",", "."))
+            assert amount > 0
+        except (ValueError, AssertionError):
+            await query.message.reply_text("❌ הסכום שזוהה אינו תקין.", reply_markup=home_kb)
+            return
+        mode = action.replace("smart_vat_", "vat_")
+        await query.message.reply_text(
+            _format_result(amount, mode),
+            parse_mode="Markdown",
+            reply_markup=home_kb,
+        )
+
     elif action == "smart_currency":
+        amount_str = context.user_data.pop("smart_amount", None)
+        context.user_data["smart_amount_pending"] = amount_str
         keyboard = [
             [
-                InlineKeyboardButton("₪ שקל → 💵 דולר", callback_data="cur_ils_usd"),
-                InlineKeyboardButton("💵 דולר → ₪ שקל", callback_data="cur_usd_ils"),
+                InlineKeyboardButton("₪ שקל → 💵 דולר", callback_data="smart_cur_ils_usd"),
+                InlineKeyboardButton("💵 דולר → ₪ שקל", callback_data="smart_cur_usd_ils"),
             ],
             [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
         ]
         await query.message.reply_text(
-            f"💱 *המרת מטבע* — סכום: *{context.user_data.get('smart_amount')}*\nבחר כיוון המרה:",
+            f"💱 *המרת מטבע* — סכום: *{amount_str}*\nבחר כיוון המרה:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
+    elif action in ("smart_cur_ils_usd", "smart_cur_usd_ils"):
+        import httpx
+        amount_str = context.user_data.pop("smart_amount_pending", None)
+        home_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 המר עוד", callback_data="menu_currency")],
+            [InlineKeyboardButton("🏠 חזרה למסך הבית", callback_data="go_home")],
+        ])
+        if not amount_str:
+            await query.message.reply_text("❌ הסכום לא נמצא, נסה שוב.", reply_markup=home_kb)
+            return
+        try:
+            amount = float(amount_str.replace(",", "."))
+        except ValueError:
+            await query.message.reply_text("❌ הסכום שזוהה אינו תקין.", reply_markup=home_kb)
+            return
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get("https://open.er-api.com/v6/latest/USD", timeout=10)
+            resp.raise_for_status()
+            usd_to_ils = resp.json()["rates"]["ILS"]
+        except Exception:
+            await query.message.reply_text("❌ שגיאה בטעינת שערי המטבע.", reply_markup=home_kb)
+            return
+        direction = action.replace("smart_cur_", "cur_")
+        if direction == "cur_ils_usd":
+            result = amount / usd_to_ils
+            text = f"₪{amount:,.2f} = 💵${result:,.4f}\n\n_שער: 1$ = ₪{usd_to_ils:.4f}_"
+        else:
+            result = amount * usd_to_ils
+            text = f"💵${amount:,.2f} = ₪{result:,.2f}\n\n_שער: 1$ = ₪{usd_to_ils:.4f}_"
+        await query.message.reply_text(text, parse_mode="Markdown", reply_markup=home_kb)
 
 
 def register(app) -> None:

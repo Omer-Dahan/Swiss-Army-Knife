@@ -76,7 +76,7 @@ def main_menu() -> InlineKeyboardMarkup:
         ],
         # סיסמאות
         [
-            InlineKeyboardButton("🔐 מגנרטור סיסמאות", callback_data="menu_pw"),
+            InlineKeyboardButton("🔐 מגנרט סיסמאות", callback_data="menu_pw"),
             InlineKeyboardButton("🔍 חוזק סיסמא",      callback_data="menu_pwcheck"),
         ],
         # כלים נוספים
@@ -113,6 +113,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def go_home_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    context.user_data.pop("smart_amount", None)
+    context.user_data.pop("smart_text", None)
     await query.edit_message_text(
         "ברוך הבא לאולר השוויצרי! 🇨🇭\n"
         "בחר כלי מהתפריט, או שלח ישירות:\n"
