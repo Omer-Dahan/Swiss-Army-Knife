@@ -54,6 +54,7 @@ HISTORY_DAYS = 7           # how many days of sent/taken history to keep
 MAX_SNOOZES = 20           # safety cap on pending snoozes per user
 
 SNOOZE_CHOICES = (5, 10, 15, 30)
+HEADSUP_CHOICES = (0, 2, 5, 10, 15)               # minutes before a dose; 0 = off
 START_HOUR_CHOICES = (5, 6, 7, 8, 9, 10, 11, 12)
 END_HOUR_CHOICES = (20, 21, 22, 23, 24, 25, 26)   # 24 = midnight, 26 = 02:00
 MIN_AWAKE_HOURS = 2                               # end must be this far after start
@@ -106,9 +107,11 @@ DEFAULTS = {
     "start_hour": 8,
     "end_hour": 22,         # hours from midnight; >23 means after midnight
     "snooze_minutes": 10,
+    "heads_up_minutes": 0,  # 0 = off; a light "get ready" ping before a round starts
     "sent": {},             # {"YYYY-MM-DD": ["0800-1", ...]} keyed by treatment day
     "taken": {},            # {"YYYY-MM-DD": ["0800-1", ...]}
-    "snoozes": [],          # [{"due": "ISO", "med": 1, "slot": "0800-1"}]
+    "heads_up_sent": {},    # {"YYYY-MM-DD": ["0800-1", ...]}
+    "snoozes": [],          # [{"due": "ISO", "med": 1, "slot": "0800-1", "reason": "snooze"|"chain"}]
     "finished_notice": None,
 }
 
@@ -153,7 +156,7 @@ def _state_path(user_id: int) -> str:
 def _clean_state(raw: dict) -> dict:
     """Merge stored data over the defaults and coerce every field to a sane value."""
     state = dict(DEFAULTS)
-    state["sent"], state["taken"], state["snoozes"] = {}, {}, []
+    state["sent"], state["taken"], state["heads_up_sent"], state["snoozes"] = {}, {}, {}, []
     if not isinstance(raw, dict):
         return state
 
@@ -184,7 +187,11 @@ def _clean_state(raw: dict) -> dict:
     if isinstance(snooze, int) and snooze in SNOOZE_CHOICES:
         state["snooze_minutes"] = snooze
 
-    for key in ("sent", "taken"):
+    headsup = raw.get("heads_up_minutes")
+    if isinstance(headsup, int) and headsup in HEADSUP_CHOICES:
+        state["heads_up_minutes"] = headsup
+
+    for key in ("sent", "taken", "heads_up_sent"):
         value = raw.get(key)
         if isinstance(value, dict):
             state[key] = {
@@ -198,10 +205,12 @@ def _clean_state(raw: dict) -> dict:
         for item in snoozes[:MAX_SNOOZES]:
             if (isinstance(item, dict) and _parse_iso_dt(item.get("due"))
                     and item.get("med") in MEDS):
+                reason = item.get("reason")
                 state["snoozes"].append({
                     "due": item["due"],
                     "med": int(item["med"]),
                     "slot": str(item.get("slot", "")),
+                    "reason": reason if reason in ("snooze", "chain") else "snooze",
                 })
 
     if _parse_iso_date(raw.get("finished_notice")):
@@ -492,9 +501,33 @@ def _next_dose_after(state: dict, day_date: date, slot: str) -> tuple[int, int, 
     return None
 
 
+def _round_next(state: dict, day_date: date, hour: int, minute: int,
+                med: int) -> tuple[int, int, int] | None:
+    """
+    The next drop within the SAME round as (hour, minute, med) — e.g. med 1 ->
+    med 2 -> med 3 — or None if it's the round's last drop. A day's doses are
+    always built round-by-round (see build_schedule/_day0_schedule) and a
+    round's drops are always well inside the interval between rounds, so
+    chunking the sorted list into fixed-size blocks of len(phase["doses"])
+    reliably recovers round boundaries without tracking them separately.
+    """
+    phase = _phase_for_day(_day_index(state, day_date))
+    if not phase:
+        return None
+    doses = doses_for_date(state, day_date)
+    round_size = len(phase["doses"])
+    try:
+        idx = doses.index((hour, minute, med))
+    except ValueError:
+        return None
+    if (idx + 1) % round_size == 0:
+        return None
+    return doses[idx + 1]
+
+
 async def _send_reminder(bot, user_id: int, state: dict, med: int, slot: str,
                          day_date: date, *, late_minutes: int = 0,
-                         snoozed: bool = False) -> bool:
+                         reason: str | None = None) -> bool:
     """Send one reminder. Returns False if the chat is unreachable."""
     day = _day_index(state, day_date)
     phase = _phase_for_day(day)
@@ -502,8 +535,10 @@ async def _send_reminder(bot, user_id: int, state: dict, med: int, slot: str,
     if day is not None and phase:
         header += f" · יום {day + 1} (שלב {phase['n']})"
     notes = []
-    if snoozed:
+    if reason == "snooze":
         notes.append("😴 תזכורת נודניק")
+    elif reason == "chain":
+        notes.append("⏳ תואם לזמן שבו לקחת את הטיפה הקודמת")
     if late_minutes >= 2:
         notes.append(f"⏰ באיחור של {late_minutes} דקות")
 
@@ -532,6 +567,34 @@ async def _send_reminder(bot, user_id: int, state: dict, med: int, slot: str,
         return False
     except TelegramError as exc:
         logger.error("eyedrops: failed to send reminder to %s: %s", user_id, exc)
+        return True  # transient — keep the plan enabled
+
+
+async def _send_headsup(bot, user_id: int, state: dict, med: int, hour: int, minute: int,
+                        day_date: date) -> bool:
+    """Send the optional 'get ready' ping before a round starts. Returns False if unreachable."""
+    day = _day_index(state, day_date)
+    phase = _phase_for_day(day)
+    header = _fmt_hm(hour, minute)
+    if day is not None and phase:
+        header += f" · יום {day + 1} (שלב {phase['n']})"
+    text = (
+        f"⏳ *בעוד {state['heads_up_minutes']} דקות — טיפות עיניים*\n"
+        f"_{header}_\n\n"
+        f"*{MEDS[med]}*"
+    )
+    try:
+        await bot.send_message(
+            chat_id=state["chat_id"], text=text, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([_HOME_BTN]),
+        )
+        logger.info("eyedrops: heads-up sent to %s (med %s at %s)", user_id, med, header)
+        return True
+    except Forbidden:
+        logger.warning("eyedrops: user %s blocked the bot — reminders disabled", user_id)
+        return False
+    except TelegramError as exc:
+        logger.error("eyedrops: failed to send heads-up to %s: %s", user_id, exc)
         return True  # transient — keep the plan enabled
 
 
@@ -604,9 +667,14 @@ async def _process_user(app, user_id: int, state: dict, now: datetime) -> None:
 
     changed = False
     pending: list[dict] = []
+    headsup_pending: list[dict] = []
+    headsup_minutes = state.get("heads_up_minutes", 0)
 
     # 1) snoozes that came due — these fire even after the protocol ended,
-    #    so a drop snoozed on the last evening is never lost.
+    #    so a drop snoozed on the last evening is never lost. This also
+    #    covers "chain" entries created when a dose is confirmed late (see
+    #    _chain_next_dose): the companion drop is delivered relative to the
+    #    actual confirmation time instead of its original clock slot.
     still_pending = []
     for item in state["snoozes"]:
         due = _parse_iso_dt(item["due"])
@@ -614,7 +682,8 @@ async def _process_user(app, user_id: int, state: dict, now: datetime) -> None:
             pending.append({
                 "med": item["med"],
                 "slot": item["slot"] or _slot(now.hour, now.minute, item["med"]),
-                "day": _active_day_date(state, now), "late": 0, "snoozed": True,
+                "day": _active_day_date(state, now), "late": 0,
+                "reason": item.get("reason", "snooze"),
             })
             changed = True
         else:
@@ -622,17 +691,33 @@ async def _process_user(app, user_id: int, state: dict, now: datetime) -> None:
     if changed:
         state["snoozes"] = still_pending
 
-    # 2) scheduled doses of every treatment day that is still running
+    # 2) scheduled doses of every treatment day that is still running, plus
+    #    the optional heads-up ping before each round's first drop
     for day_date in _days_to_scan(state, now):
         doses = doses_for_date(state, day_date)
         if not doses:
             continue
-        sent_day = state["sent"].setdefault(day_date.isoformat(), [])
-        for hour, minute, med in doses:
+        day_key = day_date.isoformat()
+        phase = _phase_for_day(_day_index(state, day_date))
+        round_size = len(phase["doses"]) if phase else 1
+        sent_day = state["sent"].setdefault(day_key, [])
+        taken_day = state["taken"].get(day_key, [])
+        headsup_day = state["heads_up_sent"].setdefault(day_key, []) if headsup_minutes else None
+
+        for idx, (hour, minute, med) in enumerate(doses):
             slot = _slot(hour, minute, med)
+            due = _dose_dt(day_date, hour, minute)
+
+            if (headsup_minutes and idx % round_size == 0 and slot not in sent_day
+                    and slot not in taken_day and slot not in headsup_day):
+                if due - timedelta(minutes=headsup_minutes) <= now < due:
+                    headsup_day.append(slot)
+                    changed = True
+                    headsup_pending.append({"med": med, "hour": hour, "minute": minute,
+                                            "slot": slot, "day": day_date})
+
             if slot in sent_day:
                 continue
-            due = _dose_dt(day_date, hour, minute)
             if now < due:
                 continue
             late = int((now - due).total_seconds() // 60)
@@ -640,7 +725,7 @@ async def _process_user(app, user_id: int, state: dict, now: datetime) -> None:
             changed = True
             if late <= MISSED_AFTER_MINUTES:
                 pending.append({"med": med, "slot": slot, "day": day_date,
-                                "late": late, "snoozed": False})
+                                "late": late, "reason": None})
             else:
                 logger.info("eyedrops: dose %s for %s missed by %s min", slot, user_id, late)
 
@@ -664,7 +749,15 @@ async def _process_user(app, user_id: int, state: dict, now: datetime) -> None:
     for item in sorted(pending, key=lambda d: (d["day"], d["slot"])):
         ok = await _send_reminder(app.bot, user_id, state, item["med"], item["slot"],
                                   item["day"], late_minutes=item["late"],
-                                  snoozed=item["snoozed"])
+                                  reason=item["reason"])
+        if not ok:
+            state["enabled"] = False
+            _save_state(user_id, state)
+            return
+
+    for item in sorted(headsup_pending, key=lambda d: (d["day"], d["slot"])):
+        ok = await _send_headsup(app.bot, user_id, state, item["med"], item["hour"],
+                                 item["minute"], item["day"])
         if not ok:
             state["enabled"] = False
             _save_state(user_id, state)
@@ -689,7 +782,7 @@ async def _process_user(app, user_id: int, state: dict, now: datetime) -> None:
 def _prune_history(state: dict, today: date) -> bool:
     keep = {(today - timedelta(days=i)).isoformat() for i in range(HISTORY_DAYS)}
     changed = False
-    for key in ("sent", "taken"):
+    for key in ("sent", "taken", "heads_up_sent"):
         for day_key in list(state[key]):
             if day_key not in keep:
                 del state[key][day_key]
@@ -760,6 +853,8 @@ def _panel_text(state: dict) -> str:
         f"שעות פעילות: *{_window_label(state)}*",
         f"נודניק: *{state['snooze_minutes']} דקות*",
     ]
+    if state["heads_up_minutes"]:
+        lines.append(f"תזכורת מוקדמת: *{state['heads_up_minutes']} דקות לפני*")
     if total:
         label = "היום" if active == _now().date() else "יום הטיפול הנוכחי"
         lines += ["", f"{label}: נלקחו *{taken}* מתוך *{total}* מנות",
@@ -786,6 +881,7 @@ def _panel_keyboard(state: dict) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("⏰ שעות פעילות", callback_data="ed_hours"),
                 InlineKeyboardButton("😴 זמן נודניק", callback_data="ed_snooze"),
             ],
+            [InlineKeyboardButton("⏳ תזכורת מוקדמת", callback_data="ed_headsup")],
             [InlineKeyboardButton("📋 לוח הזמנים של היום", callback_data="ed_today")],
             [InlineKeyboardButton(
                 "🔕 כבה תזכורות" if state["enabled"] else "🔔 הפעל תזכורות",
@@ -982,6 +1078,24 @@ async def _snooze_panel(update: Update, state: dict) -> None:
     await _render(update, text, InlineKeyboardMarkup([row, _HOME_BTN]))
 
 
+async def _headsup_panel(update: Update, state: dict) -> None:
+    row = [
+        InlineKeyboardButton(
+            f"{'✅ ' if m == state['heads_up_minutes'] else ''}{'כבוי' if m == 0 else f'{m} דק'}",
+            callback_data=f"ed_hu_{m}")
+        for m in HEADSUP_CHOICES
+    ]
+    current = state["heads_up_minutes"]
+    text = (
+        "⏳ *תזכורת מוקדמת*\n\n"
+        + (f"תקבל התראה קצרה *{current} דקות* לפני תחילת כל סבב טיפות, כדי להתכונן מראש.\n"
+           if current else "כרגע כבויה — תקבל רק את התזכורת הרגילה בזמן המנה עצמה.\n")
+        + "_חלה רק על תחילת כל סבב, לא על הטיפה השנייה/שלישית שבתוכו._\n\n"
+        "בחר משך אחר (או 'כבוי' לביטול):"
+    )
+    await _render(update, text, InlineKeyboardMarkup([row, _HOME_BTN]))
+
+
 async def _today_panel(update: Update, state: dict) -> None:
     active = _active_day_date(state)
     day = _day_index(state, active)
@@ -1025,16 +1139,48 @@ async def _reset_confirm(update: Update) -> None:
                           "ההגדרות והמעקב היומי. להמשיך?", keyboard)
 
 
+def _chain_next_dose(state: dict, day_date: date, hour: int, minute: int, med: int,
+                     confirm_time: datetime) -> None:
+    """
+    When a dose is confirmed taken, push the next drop of the same round to
+    fire relative to the ACTUAL confirmation time, not its original clock
+    slot — so tapping "לקחתי" late for drop 1 delays drop 2 by the same
+    amount instead of it having already fired (or firing) too close behind
+    the real, late, drop 1. No-op if the next drop was already sent/taken or
+    is already queued (e.g. this got called twice for the same dose).
+    """
+    nxt = _round_next(state, day_date, hour, minute, med)
+    if not nxt:
+        return
+    next_hour, next_minute, next_med = nxt
+    next_slot = _slot(next_hour, next_minute, next_med)
+    day_key = day_date.isoformat()
+    if next_slot in state["sent"].get(day_key, []) or next_slot in state["taken"].get(day_key, []):
+        return
+    if any(s["slot"] == next_slot for s in state["snoozes"]):
+        return
+    delta_minutes = (next_hour * 60 + next_minute) - (hour * 60 + minute)
+    due = confirm_time + timedelta(minutes=delta_minutes)
+    state["sent"].setdefault(day_key, []).append(next_slot)
+    state["snoozes"] = state["snoozes"][:MAX_SNOOZES - 1]
+    state["snoozes"].append({"due": due.isoformat(), "med": next_med, "slot": next_slot,
+                             "reason": "chain"})
+
+
 async def _mark_taken(update: Update, state: dict, user_id: int, med: int, hhmm: str) -> None:
     query = update.callback_query
     now = _now()
     slot = f"{hhmm}-{med}"
     active = _active_day_date(state, now)
     taken = state["taken"].setdefault(active.isoformat(), [])
-    if slot not in taken:
+    already_taken = slot in taken
+    if not already_taken:
         taken.append(slot)
     # A taken dose cancels a pending snooze for the same drop.
     state["snoozes"] = [s for s in state["snoozes"] if s.get("slot") != slot]
+    if not already_taken:
+        hour, minute = _slot_parts(hhmm)
+        _chain_next_dose(state, active, hour, minute, med, now)
     _save_state(user_id, state)
 
     text = (
@@ -1058,7 +1204,7 @@ async def _snooze(update: Update, state: dict, user_id: int, med: int, hhmm: str
     minutes = state["snooze_minutes"]
     due = _now() + timedelta(minutes=minutes)
     state["snoozes"] = [s for s in state["snoozes"] if s.get("slot") != slot][:MAX_SNOOZES - 1]
-    state["snoozes"].append({"due": due.isoformat(), "med": med, "slot": slot})
+    state["snoozes"].append({"due": due.isoformat(), "med": med, "slot": slot, "reason": "snooze"})
     _touch(update, state)
     _save_state(user_id, state)
 
@@ -1157,6 +1303,21 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             state["snooze_minutes"] = minutes
             _save_state(user_id, state)
         await _snooze_panel(update, state)
+        return
+
+    if data == "ed_headsup":
+        await _headsup_panel(update, state)
+        return
+
+    if data.startswith("ed_hu_"):
+        try:
+            minutes = int(data.rsplit("_", 1)[1])
+        except ValueError:
+            return
+        if minutes in HEADSUP_CHOICES:
+            state["heads_up_minutes"] = minutes
+            _save_state(user_id, state)
+        await _headsup_panel(update, state)
         return
 
     if data == "ed_toggle":
