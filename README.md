@@ -28,6 +28,7 @@
 | 📓 **Personal Notes** | Save, edit, and manage private personal notes (per user) |
 | 📲 **Direct WhatsApp** | Generate direct `wa.me` links from any phone number |
 | 🕒 **World Clock** | Check current time in major global cities |
+| 💧 **Eye-Drops Reminders** | Post-INTRALASIK drop schedule — set the surgery date & hour and the bot reminds you for every drop, with take/snooze buttons, daily tracking and an awake window that may run past midnight |
 
 ---
 
@@ -71,7 +72,8 @@ python bot.py
 The bot offers a seamless Hebrew UI. You can interact with it in two main ways:
 
 1. **Interactive Menu**: Send `/start` to open the main inline keyboard menu and click on the desired tool.
-2. **Smart Input Detection**: Just send text to the bot! The smart dispatcher will automatically detect what you need:
+2. **Eye-Drops Reminders**: Send `/eyedrops` (or tap 💧 in the menu), set your surgery date once (`28/07/2026 14:30` works too), and the bot handles the rest — it sends a reminder for every drop at the right time, tracks what you took, and lets you snooze. On surgery day nothing fires before the surgery hour. The awake window (05:00–02:00, may cross midnight), snooze length and on/off are all configurable in the panel.
+3. **Smart Input Detection**: Just send text to the bot! The smart dispatcher will automatically detect what you need:
    - Send an **IP address** `8.8.8.8` ➔ IP Geolocation
    - Send a **URL** `https://google.com` ➔ Offers URL Shortener or QR Code
    - Send an **Israeli License Plate** `1234567` ➔ Vehicle Lookup
@@ -91,6 +93,7 @@ Swiss Army Knife/
     ├── 📄 banks.py         # Bank branch search
     ├── 📄 currency.py      # Currency conversion
     ├── 📄 dice.py          # Dice roller
+    ├── 📄 eyedrops.py      # Post-surgery eye-drops reminders & scheduler
     ├── 📄 hebrew_fix.py    # Keyboard layout fixer
     ├── 📄 image_pdf.py     # PDF to Image and Image to PDF
     ├── 📄 location.py      # IP geolocation

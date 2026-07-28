@@ -1,3 +1,4 @@
+import logging
 import os
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -22,6 +23,7 @@ from features import (
     notes,
     smart,
     image_icon,
+    eyedrops,
 )
 
 load_dotenv()
@@ -88,6 +90,8 @@ def main_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton("⌨️ תיקון מקלדת",     callback_data="menu_hebfix"),
             InlineKeyboardButton("🎲 זריקת קוביות",    callback_data="menu_dice"),
         ],
+        # בריאות
+        [InlineKeyboardButton("💧 תזכורות טיפות עיניים", callback_data="menu_eyedrops")],
         # הערות
         [InlineKeyboardButton("📓 ההערות שלי",          callback_data="menu_notes")],
     ])
@@ -157,11 +161,31 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
 
+async def on_startup(app: Application) -> None:
+    await eyedrops.start_scheduler(app)
+
+
+async def on_shutdown(app: Application) -> None:
+    await eyedrops.stop_scheduler(app)
+
+
 def main() -> None:
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN חסר ב-.env")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO,
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(on_startup)
+        .post_shutdown(on_shutdown)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(TypeHandler(Update, reset_state_interceptor), group=-1)
@@ -183,6 +207,7 @@ def main() -> None:
     dice.register(app)
     notes.register(app)
     image_icon.register(app)
+    eyedrops.register(app)
 
     # handlers שאינם conversation
     world_clock.register(app)
