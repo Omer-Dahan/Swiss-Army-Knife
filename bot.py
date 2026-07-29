@@ -1,8 +1,13 @@
 import logging
 import os
+import asyncio
+import time
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, TypeHandler
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ConversationHandler, filters, ContextTypes, TypeHandler,
+)
 
 from features import (
     whatsapp,
@@ -28,23 +33,33 @@ from features import (
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+SESSION_TTL_SECONDS = 2 * 60 * 60
+SESSION_CLEANUP_INTERVAL_SECONDS = 10 * 60
+_session_cleanup_task: asyncio.Task | None = None
+
+
+def _clear_conversations(app: Application, chat_id: int, user_id: int) -> None:
+    """Remove abandoned ConversationHandler entries for a private-chat session."""
+    for group in app.handlers.values():
+        for handler in group:
+            if isinstance(handler, ConversationHandler):
+                conversations = getattr(handler, "_conversations", None)
+                if conversations is not None:
+                    conversations.pop((chat_id, user_id), None)
 
 
 async def reset_state_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    user_id = update.effective_user.id if update.effective_user else None
+    if chat_id and user_id:
+        context.application.bot_data.setdefault("_session_last_seen", {})[(chat_id, user_id)] = time.monotonic()
+
     if update.callback_query and update.callback_query.data:
         data = update.callback_query.data
         if data.startswith("menu_") or data == "go_home":
-            from telegram.ext import ConversationHandler
             try:
-                for group in context.application.handlers.values():
-                    for handler in group:
-                        if isinstance(handler, ConversationHandler):
-                            chat_id = update.effective_chat.id if update.effective_chat else None
-                            user_id = update.effective_user.id if update.effective_user else None
-                            if chat_id and user_id:
-                                key = (chat_id, user_id)
-                                if hasattr(handler, "_conversations") and key in handler._conversations:
-                                    del handler._conversations[key]
+                if chat_id and user_id:
+                    _clear_conversations(context.application, chat_id, user_id)
             except Exception:
                 pass
 
@@ -162,11 +177,39 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def on_startup(app: Application) -> None:
+    global _session_cleanup_task
     await eyedrops.start_scheduler(app)
+    _session_cleanup_task = asyncio.create_task(_session_cleanup_loop(app), name="session-cleanup")
 
 
 async def on_shutdown(app: Application) -> None:
+    global _session_cleanup_task
+    task, _session_cleanup_task = _session_cleanup_task, None
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await eyedrops.stop_scheduler(app)
+
+
+async def _session_cleanup_loop(app: Application) -> None:
+    """Bound short-lived PTB state without requiring the JobQueue dependency."""
+    try:
+        while True:
+            await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+            sessions = app.bot_data.get("_session_last_seen", {})
+            cutoff = time.monotonic() - SESSION_TTL_SECONDS
+            stale = [key for key, last_seen in sessions.items() if last_seen < cutoff]
+            for chat_id, user_id in stale:
+                _clear_conversations(app, chat_id, user_id)
+                # All features are private-chat flows; their temporary user data
+                # can be reconstructed on the next interaction.
+                app.drop_user_data(user_id)
+                sessions.pop((chat_id, user_id), None)
+    except asyncio.CancelledError:
+        raise
 
 
 def main() -> None:

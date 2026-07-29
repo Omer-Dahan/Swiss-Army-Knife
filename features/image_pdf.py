@@ -1,10 +1,8 @@
 import io
-from PIL import Image
 from pypdf import PdfReader
-from reportlab.pdfgen import canvas as rl_canvas
-from reportlab.lib.pagesizes import A4
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
+from features.media_utils import ImageTooLargeError, load_image, validate_file_size
 
 
 async def image_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -14,11 +12,24 @@ async def image_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # image → PDF
     if photo or (doc and doc.mime_type and doc.mime_type.startswith("image/")):
         file_obj = photo or doc
+        try:
+            validate_file_size(getattr(file_obj, "file_size", None))
+        except ImageTooLargeError as exc:
+            await update.message.reply_text(f"❌ {exc}")
+            return
         tg_file = await context.bot.get_file(file_obj.file_id)
         img_bytes = await tg_file.download_as_bytearray()
-        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        try:
+            validate_file_size(len(img_bytes))
+            img = load_image(img_bytes, "RGB")
+        except (ImageTooLargeError, ValueError) as exc:
+            await update.message.reply_text(f"❌ {exc}")
+            return
         pdf_buf = io.BytesIO()
-        img.save(pdf_buf, format="PDF")
+        try:
+            img.save(pdf_buf, format="PDF")
+        finally:
+            img.close()
         pdf_buf.seek(0)
         await update.message.reply_document(
             document=pdf_buf,
@@ -29,8 +40,18 @@ async def image_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     # PDF → images (one image per page, using Pillow via PDF rasterization)
     if doc and doc.mime_type == "application/pdf":
+        try:
+            validate_file_size(getattr(doc, "file_size", None))
+        except ImageTooLargeError as exc:
+            await update.message.reply_text(f"❌ {exc}")
+            return
         tg_file = await context.bot.get_file(doc.file_id)
         pdf_bytes = await tg_file.download_as_bytearray()
+        try:
+            validate_file_size(len(pdf_bytes))
+        except ImageTooLargeError as exc:
+            await update.message.reply_text(f"❌ {exc}")
+            return
         reader = PdfReader(io.BytesIO(pdf_bytes))
         num_pages = len(reader.pages)
         await update.message.reply_text(

@@ -13,6 +13,8 @@ from telegram.ext import (
 
 NOTES_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 ADD_NOTE, EDIT_CHOOSE, EDIT_TEXT = range(3)
+MAX_NOTES_PER_USER = 100
+MAX_NOTE_LENGTH = 2_000
 
 
 def _path(user_id: int) -> str:
@@ -73,7 +75,14 @@ async def note_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def note_add_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     uid = update.effective_user.id
     notes = _load(uid)
-    notes.append({"id": _next_id(notes), "text": update.message.text.strip(),
+    text = update.message.text.strip()
+    if len(notes) >= MAX_NOTES_PER_USER:
+        await update.message.reply_text(f"❌ אפשר לשמור עד {MAX_NOTES_PER_USER} הערות.")
+        return ConversationHandler.END
+    if not text or len(text) > MAX_NOTE_LENGTH:
+        await update.message.reply_text(f"❌ ההערה חייבת להכיל 1–{MAX_NOTE_LENGTH} תווים.")
+        return ADD_NOTE
+    notes.append({"id": _next_id(notes), "text": text,
                   "created": datetime.now().strftime("%d/%m/%Y %H:%M")})
     _save(uid, notes)
     await update.message.reply_text("✅ ההערה נשמרה!", reply_markup=_notes_keyboard(notes))
@@ -129,10 +138,14 @@ async def note_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def note_edit_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     uid = update.effective_user.id
     note_id = context.user_data.get("editing_note_id")
+    text = update.message.text.strip()
+    if not text or len(text) > MAX_NOTE_LENGTH:
+        await update.message.reply_text(f"❌ ההערה חייבת להכיל 1–{MAX_NOTE_LENGTH} תווים.")
+        return EDIT_TEXT
     notes = _load(uid)
     for note in notes:
         if note["id"] == note_id:
-            note["text"] = update.message.text.strip()
+            note["text"] = text
             note["created"] = datetime.now().strftime("%d/%m/%Y %H:%M") + " (עודכן)"
             break
     _save(uid, notes)
